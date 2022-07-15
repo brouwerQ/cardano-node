@@ -18,6 +18,11 @@ packages:
     trace-dispatcher
     trace-resources
     trace-forward
+    ../ouroboros-network/ouroboros-consensus
+    ../ouroboros-network/ouroboros-consensus-byron
+    ../ouroboros-network/ouroboros-consensus-cardano
+    ../ouroboros-network/ouroboros-consensus-protocol
+    ../ouroboros-network/ouroboros-consensus-shelley
 
 package cardano-api
   ghc-options: -Werror
@@ -268,11 +273,11 @@ source-repository-package
   subdir:
     monoidal-synchronisation
     network-mux
-    ouroboros-consensus
-    ouroboros-consensus-byron
-    ouroboros-consensus-cardano
-    ouroboros-consensus-protocol
-    ouroboros-consensus-shelley
+    -- ouroboros-consensus
+    -- ouroboros-consensus-byron
+    -- ouroboros-consensus-cardano
+    -- ouroboros-consensus-protocol
+    -- ouroboros-consensus-shelley
     ouroboros-network
     ouroboros-network-framework
     ouroboros-network-testing
