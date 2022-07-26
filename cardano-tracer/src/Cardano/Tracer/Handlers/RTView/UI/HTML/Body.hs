@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -6,7 +7,7 @@ module Cardano.Tracer.Handlers.RTView.UI.HTML.Body
   ( mkPageBody
   ) where
 
-import           Control.Monad (unless, void, when)
+import           Control.Monad (forM_, unless, void, when)
 import           Control.Monad.Extra (whenJustM, whenM)
 import           Data.Text (Text)
 import qualified Graphics.UI.Threepenny as UI
@@ -506,11 +507,18 @@ mkPageBody tracerEnv networkConfig dsIxs = do
       whenJustM (readMaybe <$> get value selectTimeRange) $ \(rangeInSec :: Int) -> do
         Chart.setTimeRange chartId rangeInSec
         when (rangeInSec == 0) $ do
-          Chart.resetZoomChartJS chartId
           -- Since the user changed '0' (which means "All time"),
           -- we have to load all the history for currently connected nodes,
           -- but for this 'dataName' only!
-          liftIO $ restoreHistoryFromBackupAll tracerEnv dataName 
+          pointsFromBackup <- liftIO $ getAllHistoryFromBackup tracerEnv dataName
+          forM_ pointsFromBackup $ \(nodeId, points) ->
+            whenJustM (getDatasetIx dsIxs nodeId) $ \ix -> do
+              Chart.clearPointsChartJS chartId [ix]
+              Chart.addAllPointsChartJS chartId [(ix, replacePointsByAvgPoints points)]
+          Chart.resetZoomChartJS chartId
+
+          -- liftIO $ restoreHistoryFromBackupAll tracerEnv dataName
+          -- ...
         saveChartsSettings
 
     on UI.selectionChange selectUpdatePeriod . const $

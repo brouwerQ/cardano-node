@@ -14,6 +14,7 @@ module Cardano.Tracer.Handlers.RTView.UI.Charts
   , saveChartsSettings
   , changeChartsToLightTheme
   , changeChartsToDarkTheme
+  , replacePointsByAvgPoints
   ) where
 
 -- | The module 'Cardano.Tracer.Handlers.RTView.UI.JS.Charts' contains the tools

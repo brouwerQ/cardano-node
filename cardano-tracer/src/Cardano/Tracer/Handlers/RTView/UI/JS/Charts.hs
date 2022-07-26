@@ -7,6 +7,7 @@ module Cardano.Tracer.Handlers.RTView.UI.JS.Charts
   ( prepareChartsJS
   , addDatasetChartJS
   , addAllPointsChartJS
+  , clearPointsChartJS
   , getDatasetsLengthChartJS
   , newTimeChartJS
   , resetZoomChartJS
@@ -145,6 +146,20 @@ getDatasetsLengthChartJS :: ChartId -> UI Word16
 getDatasetsLengthChartJS chartId = do
   (l :: Int) <- UI.callFunction $ UI.ffi "window.charts.get(%1).data.datasets.length;" (show chartId)
   return $ fromIntegral l
+
+clearPointsChartJS
+  :: ChartId
+  -> [Index]
+  -> UI ()
+clearPointsChartJS chartId ixs =
+  UI.runFunction $ UI.ffi clearAllDatasets
+ where
+  clearAllDatasets =
+       "var chart = window.charts.get('" <> show chartId <> "');"
+    <> concatMap clearDataset ixs
+    <> "chart.update();"
+
+  clearDataset (Index ix) = "chart.data.datasets[" <> show ix <> "].data = [];"
 
 addAllPointsChartJS
   :: ChartId

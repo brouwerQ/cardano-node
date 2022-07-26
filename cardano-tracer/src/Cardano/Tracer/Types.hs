@@ -3,6 +3,7 @@ module Cardano.Tracer.Types
   , ConnectedNodes
   , DataPointRequestors
   , NodeId (..)
+  , NodeName
   , ProtocolsBrake
   ) where
 
@@ -20,6 +21,8 @@ import           Trace.Forward.Utils.DataPoint (DataPointRequestor)
 --   'ConnectionId', please see 'ouroboros-network'.
 newtype NodeId = NodeId Text
   deriving (Eq, Ord, Show)
+
+type NodeName = Text
 
 -- | We have to create EKG.Store and MetricsLocalStore
 --   to keep all the metrics accepted from the node.

@@ -7,6 +7,7 @@
 module Cardano.Tracer.Handlers.RTView.Update.Historical
   ( backupAllHistory
   , backupSpecificHistory
+  , getAllHistoryFromBackup
   , restoreHistoryFromBackup
   , restoreHistoryFromBackupAll
   , runHistoricalBackup
@@ -187,6 +188,35 @@ restoreHistoryFromBackupAll
   -> IO ()
 restoreHistoryFromBackupAll tracerEnv@TracerEnv{teConnectedNodes} dataName =
   readTVarIO teConnectedNodes >>= restoreHistoryFromBackup' AllHistory (Just dataName) tracerEnv
+
+getAllHistoryFromBackup
+  :: TracerEnv
+  -> DataName
+  -> IO [(NodeId, [HistoricalPoint])]
+getAllHistoryFromBackup tracerEnv@TracerEnv{teConnectedNodes} dataName = do
+  connected <- S.toList <$> readTVarIO teConnectedNodes
+  nodesIdsWithNames <- getNodesIdsWithNames tracerEnv connected
+  backupDir <- getPathToBackupDir
+  forM nodesIdsWithNames $ \(nodeId, nodeName) -> do
+    let nodeSubdir = backupDir </> T.unpack nodeName
+    doesDirectoryExist nodeSubdir >>= \case
+      False -> return (nodeId, []) -- There is no backup for this node.
+      True -> do
+        backupFiles <- listFiles nodeSubdir
+        case find (\bFile -> show dataName `isInfixOf` bFile) backupFiles of
+          Nothing -> return (nodeId, [])
+          Just backupFile -> do
+            points <- extractHistoricalPoints nodeSubdir backupFile
+            return (nodeId, points)
+ where
+  extractHistoricalPoints nodeSubdir bFile = do
+    let backupFile = nodeSubdir </> takeBaseName bFile
+    try_ (BSL.readFile backupFile) >>= \case
+      Left _ -> return []
+      Right rawPoints ->
+        case CSV.decode CSV.NoHeader rawPoints of
+          Left _ -> return [] -- Maybe file was broken...
+          Right (pointsV :: V.Vector HistoricalPoint) -> return $ V.toList pointsV
 
 restoreHistoryFromBackup'
   :: HistoryMark
