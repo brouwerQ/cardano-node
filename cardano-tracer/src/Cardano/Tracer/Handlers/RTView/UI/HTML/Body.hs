@@ -509,7 +509,7 @@ mkPageBody tracerEnv networkConfig dsIxs = do
           Chart.resetZoomChartJS chartId
           -- Since the user changed '0' (which means "All time"),
           -- we have to load all the history for currently connected nodes,
-          -- but for this 'chartName' only!
+          -- but for this 'dataName' only!
           liftIO $ restoreHistoryFromBackupAll tracerEnv dataName 
         saveChartsSettings
 
