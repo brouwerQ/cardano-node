@@ -6,7 +6,7 @@ module Cardano.Tracer.Test.Acceptor
   , launchAcceptorsSimple
   ) where
 
-import           Control.Concurrent.STM.TVar (readTVarIO)
+import           Control.Concurrent.STM.TVar (newTVarIO, readTVarIO)
 import           Control.Concurrent.Async.Extra (sequenceConcurrently)
 import           Control.Concurrent.Extra (newLock)
 import           Control.Monad (forever, forM_, void)
@@ -47,6 +47,8 @@ launchAcceptorsSimple mode localSock dpName = do
   resourcesHistory <- initResourcesHistory
   txHistory <- initTransactionsHistory
 
+  rtViewPageOpened <- newTVarIO False
+
   let tracerEnv =
         TracerEnv
           { teConfig            = mkConfig
@@ -61,6 +63,7 @@ launchAcceptorsSimple mode localSock dpName = do
           , teEventsQueues      = eventsQueues
           , teDPRequestors      = dpRequestors
           , teProtocolsBrake    = protocolsBrake
+          , teRTViewPageOpened  = rtViewPageOpened
           }
 
   void . sequenceConcurrently $

@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 import           Control.Concurrent.Extra (newLock)
+import           Control.Concurrent.STM.TVar (newTVarIO)
 import           Criterion.Main
 import qualified Data.List.NonEmpty as NE
 import           Data.Time.Clock (getCurrentTime)
@@ -44,6 +45,8 @@ main = do
   currentDPLock  <- newLock
   eventsQueues   <- initEventsQueues dpRequestors currentDPLock
 
+  rtViewPageOpened <- newTVarIO False
+
   let te1 =
         TracerEnv
           { teConfig            = c1
@@ -58,6 +61,7 @@ main = do
           , teEventsQueues      = eventsQueues
           , teDPRequestors      = dpRequestors
           , teProtocolsBrake    = protocolsBrake
+          , teRTViewPageOpened  = rtViewPageOpened
           }
       te2 =
         TracerEnv
@@ -73,6 +77,7 @@ main = do
           , teEventsQueues      = eventsQueues
           , teDPRequestors      = dpRequestors
           , teProtocolsBrake    = protocolsBrake
+          , teRTViewPageOpened  = rtViewPageOpened
           }
 
   removePathForcibly root

@@ -299,6 +299,7 @@ benchmark cardano-tracer-bench
                        , directory
                        , extra
                        , filepath
+                       , stm
                        , time
                        , trace-dispatcher
 
