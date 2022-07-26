@@ -9,8 +9,8 @@ module Cardano.Tracer.Handlers.RTView.UI.Types
   , Color (..)
   , Colors
   , DatasetsIndices
-  , DatasetsTimestamps
   , Index (..)
+  , WebPageStatus
   ) where
 
 import           Control.Concurrent.STM.TBQueue (TBQueue)
@@ -20,7 +20,6 @@ import           Data.Map.Strict (Map)
 import           Data.Word (Word16)
 import           GHC.Generics (Generic)
 
-import           Cardano.Tracer.Handlers.RTView.State.Historical
 import           Cardano.Tracer.Types (NodeId (..))
 
 data ChartId
@@ -78,7 +77,5 @@ type Colors = TBQueue Color
 --   where 'ix' is an index of a dataset in _each_ chart.
 type DatasetsIndices = TVar (Map NodeId Index)
 
--- | When we add points to chart, we have to remember the timestamp of the latest point,
---   for each chart, to avoid duplicated rendering of the same points.
-type LatestTimestamps   = Map DataName POSIXTime
-type DatasetsTimestamps = TVar (Map NodeId LatestTimestamps)
+-- | It's 'True' if the web page is opened, 'False' otherwise.
+type WebPageStatus = TVar Bool

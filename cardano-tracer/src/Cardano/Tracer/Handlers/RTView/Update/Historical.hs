@@ -6,6 +6,7 @@
 
 module Cardano.Tracer.Handlers.RTView.Update.Historical
   ( backupAllHistory
+  , backupSpecificHistory
   , restoreHistoryFromBackup
   , restoreHistoryFromBackupAll
   , runHistoricalBackup
@@ -21,6 +22,7 @@ import           Control.Monad.Extra (ifM, whenJust)
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Csv as CSV
 import           Data.List (find, isInfixOf, partition)
+import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
 import           Data.Set (Set)
 import qualified Data.Set as S
@@ -77,10 +79,14 @@ runHistoricalUpdater tracerEnv lastResources = forever $ do
  where
   TracerEnv{teAcceptedMetrics, teTxHistory, teResourcesHistory, teBlockchainHistory} = tracerEnv
 
+-- | If RTView's web page is opened, historical backup is performing by UI-code,
+--   in this case we should skip backup.
 runHistoricalBackup :: TracerEnv -> IO ()
-runHistoricalBackup tracerEnv = forever $ do
+runHistoricalBackup tracerEnv@TracerEnv{teRTViewPageOpened} = forever $ do
   sleep 300.0 -- TODO: 5 minutes, should it be changed?
-  backupAllHistory tracerEnv
+  readTVarIO teRTViewPageOpened >>= \case
+    False -> backupAllHistory tracerEnv
+    True -> return () -- Skip, UI-code is performing backup.
 
 backupAllHistory :: TracerEnv -> IO ()
 backupAllHistory tracerEnv@TracerEnv{teConnectedNodes} = do
@@ -93,9 +99,9 @@ backupAllHistory tracerEnv@TracerEnv{teConnectedNodes} = do
     <*> readTVar txHistory
   -- We can safely work with files for different nodes concurrently.
   forConcurrently_ nodesIdsWithNames $ \(nodeId, nodeName) -> do
-    backupHistory backupDir cHistory nodeId nodeName
-    backupHistory backupDir rHistory nodeId nodeName
-    backupHistory backupDir tHistory nodeId nodeName
+    backupHistory backupDir cHistory nodeId nodeName Nothing
+    backupHistory backupDir rHistory nodeId nodeName Nothing
+    backupHistory backupDir tHistory nodeId nodeName Nothing
   -- Now we can remove historical points from histories,
   -- to prevent big memory consumption.
   cleanupHistoryPoints chainHistory
@@ -107,21 +113,65 @@ backupAllHistory tracerEnv@TracerEnv{teConnectedNodes} = do
   ResHistory resourcesHistory = teResourcesHistory
   TXHistory txHistory         = teTxHistory
 
-  backupHistory backupDir history nodeId nodeName =
-    whenJust (M.lookup nodeId history) $ \historyData -> ignore $ do
-      let nodeSubdir = backupDir </> T.unpack nodeName
-      createDirectoryIfMissing True nodeSubdir
-      forM_ (M.toList historyData) $ \(historyDataName, historyPoints) -> do
-        let historyDataFile = nodeSubdir </> show historyDataName
-        ifM (doesFileExist historyDataFile)
-          (BSL.appendFile historyDataFile $ pointsToBS historyPoints)
-          (BSL.writeFile  historyDataFile $ pointsToBS historyPoints)
-
-  pointsToBS = CSV.encode . S.toAscList
-
   -- Remove sets of historical points only, because they are already backed up.
   cleanupHistoryPoints history = atomically $
     modifyTVar' history $ M.map (M.map (const S.empty))
+
+-- | Backup specific history after these points were pushed to corresponding JS-chart.
+--   After cleanup we can safely remove them from the memory.
+backupSpecificHistory
+  :: TracerEnv
+  -> History
+  -> [NodeId]
+  -> DataName
+  -> IO ()
+backupSpecificHistory tracerEnv history connected dataName = do
+  nodesIdsWithNames <- getNodesIdsWithNames tracerEnv connected
+  backupDir <- getPathToBackupDir
+  hist <- readTVarIO history
+  forM_ nodesIdsWithNames $ \(nodeId, nodeName) -> do
+    backupHistory backupDir hist nodeId nodeName $ Just dataName
+    cleanupSpecificHistoryPoints nodeId
+ where
+  cleanupSpecificHistoryPoints nodeId = atomically $
+    -- Removes only the points for 'nodeId' and 'dataName'.
+    modifyTVar' history $ \currentHistory ->
+      case M.lookup nodeId currentHistory of
+        Nothing -> currentHistory
+        Just dataForNode ->
+          case M.lookup dataName dataForNode of
+            Nothing -> currentHistory
+            Just _histPoints ->
+              let newDataForNode = M.adjust (const S.empty) dataName dataForNode
+              in M.adjust (const newDataForNode) nodeId currentHistory
+
+backupHistory
+  :: FilePath
+  -> Map NodeId HistoricalData
+  -> NodeId
+  -> T.Text
+  -> Maybe DataName
+  -> IO ()
+backupHistory backupDir history nodeId nodeName mDataName =
+  whenJust (M.lookup nodeId history) $ \historyData -> ignore $ do
+    let nodeSubdir = backupDir </> T.unpack nodeName
+    createDirectoryIfMissing True nodeSubdir
+    case mDataName of
+      Nothing ->
+        forM_ (M.toList historyData) $ \(historyDataName, historyPoints) ->
+          doBackup nodeSubdir historyDataName historyPoints
+      Just dataName ->
+        case M.lookup dataName historyData of
+          Nothing -> return ()
+          Just historyPoints -> doBackup nodeSubdir dataName historyPoints
+ where
+  doBackup nodeSubdir dataName historyPoints = do
+    let historyDataFile = nodeSubdir </> show dataName
+    ifM (doesFileExist historyDataFile)
+      (BSL.appendFile historyDataFile $ pointsToBS historyPoints)
+      (BSL.writeFile  historyDataFile $ pointsToBS historyPoints)
+
+  pointsToBS = CSV.encode . S.toAscList
 
 data HistoryMark = LatestHistory | AllHistory
 

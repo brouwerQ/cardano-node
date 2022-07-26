@@ -6,13 +6,10 @@
 module Cardano.Tracer.Handlers.RTView.UI.Charts
   ( initColors
   , initDatasetsIndices
-  , initDatasetsTimestamps
   , getDatasetIx
   , addNodeDatasetsToCharts
   , addPointsToChart
   , addAllPointsToChart
-  , getLatestDisplayedTS
-  , saveLatestDisplayedTS
   , restoreChartsSettings
   , saveChartsSettings
   , changeChartsToLightTheme
@@ -39,6 +36,7 @@ import           Data.Text (pack)
 import           Graphics.UI.Threepenny.Core
 import           Text.Read (readMaybe)
 
+import           Cardano.Tracer.Environment
 import           Cardano.Tracer.Handlers.RTView.State.Displayed
 import           Cardano.Tracer.Handlers.RTView.State.Historical
 import           Cardano.Tracer.Handlers.RTView.System
@@ -47,6 +45,7 @@ import qualified Cardano.Tracer.Handlers.RTView.UI.JS.Charts as Chart
 import qualified Cardano.Tracer.Handlers.RTView.UI.JS.Utils as JS
 import           Cardano.Tracer.Handlers.RTView.UI.Types
 import           Cardano.Tracer.Handlers.RTView.UI.Utils
+import           Cardano.Tracer.Handlers.RTView.Update.Historical
 import           Cardano.Tracer.Types
 
 chartsIds :: [ChartId]
@@ -112,43 +111,6 @@ addNodeDatasetsToCharts window nodeId@(NodeId anId) colors datasetIndices displa
   -- Change color label for node name as well.
   findAndSet (set style [("color", code)]) window (anId <> "__node-chart-label")
 
-initDatasetsTimestamps :: UI DatasetsTimestamps
-initDatasetsTimestamps = liftIO . newTVarIO $ M.empty
-
-saveLatestDisplayedTS
-  :: DatasetsTimestamps
-  -> NodeId
-  -> DataName
-  -> POSIXTime
-  -> UI ()
-saveLatestDisplayedTS tss nodeId dataName ts = liftIO . atomically $
-  modifyTVar' tss $ \currentTimestamps ->
-    case M.lookup nodeId currentTimestamps of
-      Nothing ->
-        -- There is no latest timestamps for charts for this node yet.
-        let newTSForNode = M.singleton dataName ts
-        in M.insert nodeId newTSForNode currentTimestamps
-      Just tssForNode ->
-        let newTSForNode =
-              case M.lookup dataName tssForNode of
-                Nothing ->
-                  -- There is no latest timestamps for this dataName yet.
-                  M.insert dataName ts tssForNode
-                Just _ ->
-                  M.adjust (const ts) dataName tssForNode
-        in M.adjust (const newTSForNode) nodeId currentTimestamps
-
-getLatestDisplayedTS
-  :: DatasetsTimestamps
-  -> NodeId
-  -> DataName
-  -> UI (Maybe POSIXTime)
-getLatestDisplayedTS tss nodeId dataName = liftIO $ do
-  tss' <- readTVarIO tss
-  case M.lookup nodeId tss' of
-    Nothing         -> return Nothing
-    Just tssForNode -> return $ M.lookup dataName tssForNode
-
 -- Each chart updates independently from others. Because of this, the user
 -- can specify "auto-update period" for each chart. Some of data (by its nature)
 -- shoudn't be updated too frequently.
@@ -158,10 +120,9 @@ getLatestDisplayedTS tss nodeId dataName = liftIO $ do
 --
 -- 'addAllPointsToChart' doesn not do average calculation, it pushes all the points as they are.
 addPointsToChart, addAllPointsToChart
-  :: ConnectedNodes
+  :: TracerEnv
   -> History
   -> DatasetsIndices
-  -> DatasetsTimestamps
   -> DataName
   -> ChartId
   -> UI ()
@@ -170,45 +131,27 @@ addAllPointsToChart = doAddPointsToChart id
 
 doAddPointsToChart
   :: ([HistoricalPoint] -> [HistoricalPoint])
-  -> ConnectedNodes
+  -> TracerEnv
   -> History
   -> DatasetsIndices
-  -> DatasetsTimestamps
   -> DataName
   -> ChartId
   -> UI ()
-doAddPointsToChart replaceByAvg connectedNodes hist datasetIndices datasetTimestamps dataName chartId = do
-  connected <- liftIO $ S.toList <$> readTVarIO connectedNodes
+doAddPointsToChart replaceByAvg tracerEnv hist datasetIndices dataName chartId = do
+  connected <- liftIO $ S.toList <$> readTVarIO (teConnectedNodes tracerEnv)
   dataForPush <-
     forM connected $ \nodeId ->
       liftIO (getHistoricalData hist nodeId dataName) >>= \case
         []     -> return Nothing
-        points -> do
-          let (latestTS, _) = last points
-          getLatestDisplayedTS datasetTimestamps nodeId dataName >>= \case
-            Nothing ->
-              -- There is no saved latestTS for this node and chart yet,
-              -- so display all the history and remember the latestTS.
-              getDatasetIx datasetIndices nodeId >>= \case
-                Nothing -> return Nothing
-                Just ix ->
-                  return . Just $ ( (nodeId, latestTS)
-                                  , (ix, replaceByAvg points)
-                                  )
-            Just storedTS ->
-              -- Some of the history for this node and chart is already displayed,
-              -- so cut displayed points first. The only points we should add now
-              -- are the points with 'ts' that is bigger than 'storedTS'.
-              getDatasetIx datasetIndices nodeId >>= \case
-                Nothing -> return Nothing
-                Just ix ->
-                  return . Just $ ( (nodeId, latestTS)
-                                  , (ix, replaceByAvg $! cutOldPoints storedTS points)
-                                  )
-  let (nodeIdsWithLatestTss, datasetIxsWithPoints) = unzip $ catMaybes dataForPush
+        points ->
+          getDatasetIx datasetIndices nodeId >>= \case
+            Nothing -> return Nothing
+            Just ix -> return $ Just (ix, replaceByAvg points)
+  let datasetIxsWithPoints = catMaybes dataForPush
   Chart.addAllPointsChartJS chartId datasetIxsWithPoints
-  forM_ nodeIdsWithLatestTss $ \(nodeId, latestTS) ->
-    saveLatestDisplayedTS datasetTimestamps nodeId dataName latestTS
+  -- Now all the points from 'hist' is already pushed to JS-chart.
+  -- It means that we can back these points up and removed them from the 'hist'.
+  liftIO $ backupSpecificHistory tracerEnv hist connected dataName
 
 replacePointsByAvgPoints :: [HistoricalPoint] -> [HistoricalPoint]
 replacePointsByAvgPoints [] = []
@@ -231,21 +174,6 @@ replacePointsByAvgPoints points =
   -- is P1/P2
   -- Maximum number of points to calculate avg = 15 s.
   numberOfPointsToAverage = 15
-
-cutOldPoints
-  :: POSIXTime
-  -> [HistoricalPoint]
-  -> [HistoricalPoint]
-cutOldPoints _ [] = []
-cutOldPoints oldTS (point@(ts, _):newerPoints) =
-  if ts > oldTS
-    then
-      -- This point is newer than 'oldTS', take it and all the following
-      -- as well, because they are definitely newer (points are sorted by ts).
-      point : newerPoints
-    else
-      -- This point are older than 'oldTS', it means that it already was displayed.
-      cutOldPoints oldTS newerPoints
 
 restoreChartsSettings :: UI ()
 restoreChartsSettings = readSavedChartsSettings >>= setCharts

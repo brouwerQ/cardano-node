@@ -8,6 +8,7 @@ module Cardano.Tracer.Run
 
 import           Control.Concurrent.Async.Extra (sequenceConcurrently)
 import           Control.Concurrent.Extra (newLock)
+import           Control.Concurrent.STM.TVar (newTVarIO)
 import           Control.Monad (void)
 
 import           Cardano.Tracer.Acceptors.Run
@@ -49,6 +50,8 @@ doRunCardanoTracer config protocolsBrake dpRequestors = do
   currentDPLock  <- newLock
   eventsQueues   <- initEventsQueues dpRequestors currentDPLock
 
+  rtViewPageOpened <- newTVarIO False
+
   -- Environment for all following functions.
   let tracerEnv =
         TracerEnv
@@ -64,6 +67,7 @@ doRunCardanoTracer config protocolsBrake dpRequestors = do
           , teEventsQueues      = eventsQueues
           , teDPRequestors      = dpRequestors
           , teProtocolsBrake    = protocolsBrake
+          , teRTViewPageOpened  = rtViewPageOpened
           }
 
   -- Specify what should be done before 'cardano-tracer' stops.
