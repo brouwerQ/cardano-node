@@ -110,12 +110,12 @@ addNodeColumn window loggingConfig nodesErrors updateErrorsTimer
   addNodeCell "block-replay" [ UI.span ## (id' <> "__node-block-replay")
                                        # set html "0&nbsp;%"
                              ]
-  addNodeCell "chunk-validation" [ UI.span ## (id' <> "__node-chunk-validation")
-                                           # set text "—"
-                                 ]
-  addNodeCell "update-ledger-db" [ UI.span ## (id' <> "__node-update-ledger-db")
-                                           # set html "0&nbsp;%"
-                                 ]
+  --addNodeCell "chunk-validation" [ UI.span ## (id' <> "__node-chunk-validation")
+  --                                         # set text "—"
+  --                               ]
+  --addNodeCell "update-ledger-db" [ UI.span ## (id' <> "__node-update-ledger-db")
+  --                                         # set html "0&nbsp;%"
+  --                               ]
   addNodeCell "peers" [ UI.div #. "buttons has-addons" #+
                           [ UI.button ## (id' <> "__node-peers-num")
                                       #. "button is-static"

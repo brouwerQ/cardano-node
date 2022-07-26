@@ -69,7 +69,7 @@ var chart = new Chart(ctx, {
       zoom: {
         zoom: {
           drag: {
-            enabled: false
+            enabled: true
           },
           mode: 'x'
         }
