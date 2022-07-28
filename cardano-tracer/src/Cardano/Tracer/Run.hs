@@ -71,8 +71,9 @@ doRunCardanoTracer config protocolsBrake dpRequestors = do
           }
 
   -- Specify what should be done before 'cardano-tracer' stops.
-  beforeProgramStops $
+  beforeProgramStops $ do
     backupAllHistory tracerEnv
+    applyBrake (teProtocolsBrake tracerEnv)
 
   void . sequenceConcurrently $
     [ runLogsRotator    tracerEnv

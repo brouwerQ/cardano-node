@@ -8,8 +8,9 @@ module Cardano.Tracer.Handlers.RTView.Update.Historical
   ( backupAllHistory
   , backupSpecificHistory
   , getAllHistoryFromBackup
+  , getLastHistoryFromBackups
+  , getLastHistoryFromBackupsAll
   , restoreHistoryFromBackup
-  , restoreHistoryFromBackupAll
   , runHistoricalBackup
   , runHistoricalUpdater
   ) where
@@ -25,6 +26,7 @@ import qualified Data.Csv as CSV
 import           Data.List (find, isInfixOf, partition)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
+import           Data.Maybe (catMaybes)
 import           Data.Set (Set)
 import qualified Data.Set as S
 import qualified Data.Text as T
@@ -49,6 +51,7 @@ import           Cardano.Tracer.Handlers.RTView.Update.Resources
 import           Cardano.Tracer.Handlers.RTView.Update.Transactions
 import           Cardano.Tracer.Handlers.RTView.Update.Utils
 import           Cardano.Tracer.Types
+import           Cardano.Tracer.Utils
 
 -- | A lot of information received from the node is useful as historical data.
 --   It means that such an information should be displayed on time charts,
@@ -182,13 +185,6 @@ restoreHistoryFromBackup
   -> IO ()
 restoreHistoryFromBackup = restoreHistoryFromBackup' LatestHistory Nothing
 
-restoreHistoryFromBackupAll
-  :: TracerEnv
-  -> DataName
-  -> IO ()
-restoreHistoryFromBackupAll tracerEnv@TracerEnv{teConnectedNodes} dataName =
-  readTVarIO teConnectedNodes >>= restoreHistoryFromBackup' AllHistory (Just dataName) tracerEnv
-
 getAllHistoryFromBackup
   :: TracerEnv
   -> DataName
@@ -217,6 +213,67 @@ getAllHistoryFromBackup tracerEnv@TracerEnv{teConnectedNodes} dataName = do
         case CSV.decode CSV.NoHeader rawPoints of
           Left _ -> return [] -- Maybe file was broken...
           Right (pointsV :: V.Vector HistoricalPoint) -> return $ V.toList pointsV
+
+getLastHistoryFromBackupsAll
+  :: TracerEnv
+  -> IO [(NodeId, [(DataName, [HistoricalPoint])])]
+getLastHistoryFromBackupsAll tracerEnv@TracerEnv{teConnectedNodes} =
+  getLastHistoryFromBackups' tracerEnv . S.toList =<< readTVarIO teConnectedNodes
+
+getLastHistoryFromBackups
+  :: TracerEnv
+  -> Set NodeId
+  -> IO [(NodeId, [(DataName, [HistoricalPoint])])]
+getLastHistoryFromBackups tracerEnv =
+  getLastHistoryFromBackups' tracerEnv . S.toList
+
+getLastHistoryFromBackups'
+  :: TracerEnv
+  -> [NodeId]
+  -> IO [(NodeId, [(DataName, [HistoricalPoint])])]
+getLastHistoryFromBackups' tracerEnv nodeIds = do
+  backupDir <- getPathToBackupDir
+  forMM (getNodesIdsWithNames tracerEnv nodeIds) $ \(nodeId, nodeName) -> do
+    let nodeSubdir = backupDir </> T.unpack nodeName
+    doesDirectoryExist nodeSubdir >>= \case
+      False -> return (nodeId, []) -- There is no backup for this node.
+      True -> do
+        namesWithPoints <-
+          forMM (listFiles nodeSubdir) $
+            extractNamesWithHistoricalPoints nodeSubdir
+        return (nodeId, catMaybes namesWithPoints)
+ where
+  extractNamesWithHistoricalPoints nodeSubdir bFile = do
+    let pureFile = takeBaseName bFile
+    case readMaybe pureFile of
+      Nothing -> return Nothing
+      Just (dataName :: DataName) -> do
+        -- Ok, this file contains historical points for 'dataName', extract them...
+        let backupFile = nodeSubdir </> pureFile
+        try_ (BSL.readFile backupFile) >>= \case
+          Left _ -> return Nothing
+          Right rawPoints ->
+            case CSV.decode CSV.NoHeader rawPoints of
+              Left _ -> return Nothing -- Maybe file was broken...
+              Right (pointsV :: V.Vector HistoricalPoint) -> do
+                now <- systemToUTCTime <$> getSystemTime
+                -- Ok, take the points for the last 6 hours from now.
+                let sixHoursInS = 21600
+                    !firstTSWeNeed = utc2s now - sixHoursInS
+                    pointsWeNeed = filter (\(ts, _) -> ts >= firstTSWeNeed) $ V.toList pointsV
+                return $ Just (dataName, pointsWeNeed)
+
+
+
+
+
+
+
+
+
+
+
+
 
 restoreHistoryFromBackup'
   :: HistoryMark
@@ -351,7 +408,7 @@ restoreHistoryFromBackup' historyMark aDataName tracerEnv connected = ignore $ d
 getNodesIdsWithNames
   :: TracerEnv
   -> [NodeId]
-  -> IO [(NodeId, T.Text)]
+  -> IO [(NodeId, NodeName)]
 getNodesIdsWithNames _ [] = return []
 getNodesIdsWithNames TracerEnv{teDPRequestors, teCurrentDPLock} connected =
   forM connected $ \nodeId@(NodeId anId) ->

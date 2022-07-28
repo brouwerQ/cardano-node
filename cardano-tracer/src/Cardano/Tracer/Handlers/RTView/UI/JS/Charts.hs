@@ -95,7 +95,7 @@ var chart = new Chart(ctx, {
             second: 'HH:mm:ss',
             minute: 'HH:mm',
             hour:   'hh a',
-            day:    'MMM D YYYY'
+            day:    'D'
           },
           unit: 'minute'
         },
@@ -219,7 +219,7 @@ setTimeRange chartId rangeInSec = do
       !maxInMs   = utc2s now * 1000
       !minInMs   = maxInMs - fromIntegral rangeInMs
   -- Set time units depends on selected range.
-  let timeUnit = if | rangeInSec == 0                        -> "hour"
+  let timeUnit = if | rangeInSec == 0                        -> "day"
                     | rangeInSec > 0   && rangeInSec <= 300  -> "second"
                     | rangeInSec > 300 && rangeInSec <= 1800 -> "minute"
                     | otherwise                              -> "hour"

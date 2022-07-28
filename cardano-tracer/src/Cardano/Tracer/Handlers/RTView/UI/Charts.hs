@@ -15,6 +15,9 @@ module Cardano.Tracer.Handlers.RTView.UI.Charts
   , changeChartsToLightTheme
   , changeChartsToDarkTheme
   , replacePointsByAvgPoints
+  , restoreAllHistoryOnChart
+  , restoreLastHistoryOnAllCharts
+  , restoreLastHistoryOnCharts
   ) where
 
 -- | The module 'Cardano.Tracer.Handlers.RTView.UI.JS.Charts' contains the tools
@@ -27,7 +30,8 @@ import           Control.Concurrent.STM (atomically)
 import           Control.Concurrent.STM.TBQueue (newTBQueueIO, tryReadTBQueue, writeTBQueue)
 import           Control.Concurrent.STM.TVar (modifyTVar', newTVarIO, readTVarIO)
 import           Control.Exception.Extra (ignore, try_)
-import           Control.Monad (forM, forM_, when)
+import           Control.Monad (forM, forM_, unless, when)
+import           Control.Monad.Extra (whenJustM)
 import           Data.Aeson (decodeFileStrict', encodeFile)
 import           Data.List.Extra (chunksOf)
 import qualified Data.Map.Strict as M
@@ -48,6 +52,7 @@ import           Cardano.Tracer.Handlers.RTView.UI.Types
 import           Cardano.Tracer.Handlers.RTView.UI.Utils
 import           Cardano.Tracer.Handlers.RTView.Update.Historical
 import           Cardano.Tracer.Types
+import           Cardano.Tracer.Utils
 
 chartsIds :: [ChartId]
 chartsIds = [minBound .. maxBound]
@@ -226,3 +231,75 @@ changeChartsToDarkTheme :: UI ()
 changeChartsToDarkTheme =
   forM_ chartsIds $ \chartId ->
     Chart.changeColorsChartJS chartId (Color chartTextLight) (Color chartGridLight)
+
+restoreAllHistoryOnChart
+  :: TracerEnv
+  -> DataName
+  -> ChartId
+  -> DatasetsIndices
+  -> UI ()
+restoreAllHistoryOnChart tracerEnv dataName chartId dsIxs = do
+  pointsFromBackup <- liftIO $ getAllHistoryFromBackup tracerEnv dataName
+  forM_ pointsFromBackup $ \(nodeId, points) ->
+    whenJustM (getDatasetIx dsIxs nodeId) $ \ix -> do
+      Chart.clearPointsChartJS chartId [ix]
+      Chart.addAllPointsChartJS chartId [(ix, replacePointsByAvgPoints points)]
+
+restoreLastHistoryOnAllCharts
+  :: TracerEnv
+  -> DatasetsIndices
+  -> UI ()
+restoreLastHistoryOnAllCharts tracerEnv dsIxs =
+  restoreLastHistoryOnCharts' (getLastHistoryFromBackupsAll tracerEnv) dsIxs
+
+restoreLastHistoryOnCharts
+  :: TracerEnv
+  -> DatasetsIndices
+  -> S.Set NodeId
+  -> UI ()
+restoreLastHistoryOnCharts tracerEnv dsIxs nodeIds =
+  restoreLastHistoryOnCharts' (getLastHistoryFromBackups tracerEnv nodeIds) dsIxs
+
+restoreLastHistoryOnCharts'
+  :: IO [(NodeId, [(DataName, [HistoricalPoint])])]
+  -> DatasetsIndices
+  -> UI ()
+restoreLastHistoryOnCharts' historyGetter dsIxs =
+  forMM_ (liftIO historyGetter) $ \(nodeId, dataNamesWithPoints) ->
+    whenJustM (getDatasetIx dsIxs nodeId) $ \ix ->
+      forM_ dataNamesWithPoints $ \(dataName, points) ->
+        unless (null points) $ do
+          let chartId = dataNameToChartId dataName
+          Chart.clearPointsChartJS chartId [ix]
+          Chart.addAllPointsChartJS chartId [(ix, replacePointsByAvgPoints points)]
+
+dataNameToChartId :: DataName -> ChartId
+dataNameToChartId dataName =
+  case dataName of
+    CPUData                   -> CPUChart
+    MemoryData                -> MemoryChart
+    GCMajorNumData            -> GCMajorNumChart
+    GCMinorNumData            -> GCMinorNumChart
+    GCLiveMemoryData          -> GCLiveMemoryChart
+    CPUTimeGCData             -> CPUTimeGCChart
+    CPUTimeAppData            -> CPUTimeAppChart
+    ThreadsNumData            -> ThreadsNumChart
+    -- Chain
+    ChainDensityData          -> ChainDensityChart
+    SlotNumData               -> SlotNumChart
+    BlockNumData              -> BlockNumChart
+    SlotInEpochData           -> SlotInEpochChart
+    EpochData                 -> EpochChart
+    NodeCannotForgeData       -> NodeCannotForgeChart
+    ForgedSlotLastData        -> ForgedSlotLastChart
+    NodeIsLeaderData          -> NodeIsLeaderChart
+    NodeIsNotLeaderData       -> NodeIsNotLeaderChart
+    ForgedInvalidSlotLastData -> ForgedInvalidSlotLastChart
+    AdoptedSlotLastData       -> AdoptedSlotLastChart
+    NotAdoptedSlotLastData    -> NotAdoptedSlotLastChart
+    AboutToLeadSlotLastData   -> AboutToLeadSlotLastChart
+    CouldNotForgeSlotLastData -> CouldNotForgeSlotLastChart
+    -- TX
+    TxsProcessedNumData       -> TxsProcessedNumChart
+    MempoolBytesData          -> MempoolBytesChart
+    TxsInMempoolData          -> TxsInMempoolChart

@@ -20,6 +20,8 @@ module Cardano.Tracer.Utils
   , initProtocolsBrake
   , lift2M
   , lift3M
+  , forMM
+  , forMM_
   , nl
   , runInLoop
   , showProblemIfAny
@@ -137,6 +139,12 @@ lift2M f x y = liftA2 (,) x y >>= uncurry f
 -- | Like 'liftM3', but for monadic function.
 lift3M :: Monad m => (a -> b -> c -> m d) -> m a -> m b -> m c -> m d
 lift3M f x y z = liftA3 (,,) x y z >>= uncurry3 f
+
+forMM :: (Traversable t, Monad m) => m (t a) -> (a -> m b) -> m (t b)
+forMM mVals f = mVals >>= mapM f
+
+forMM_ :: (Foldable t, Monad m) => m (t a) -> (a -> m ()) -> m ()
+forMM_ mVals f = mVals >>= mapM_ f
 
 nl :: T.Text
 #ifdef UNIX

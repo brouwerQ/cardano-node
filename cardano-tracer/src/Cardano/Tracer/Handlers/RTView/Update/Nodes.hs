@@ -44,7 +44,6 @@ import           Cardano.Tracer.Handlers.RTView.UI.HTML.Node.Column
 import           Cardano.Tracer.Handlers.RTView.UI.HTML.NoNodes
 import           Cardano.Tracer.Handlers.RTView.UI.Types
 import           Cardano.Tracer.Handlers.RTView.UI.Utils
-import           Cardano.Tracer.Handlers.RTView.Update.Historical
 import           Cardano.Tracer.Handlers.RTView.Update.NodeInfo
 import           Cardano.Tracer.Handlers.RTView.Update.Utils
 import           Cardano.Tracer.Handlers.RTView.Utils
@@ -82,8 +81,8 @@ updateNodesUI tracerEnv@TracerEnv{teConnectedNodes, teAcceptedMetrics, teSavedTO
     checkNoNodesState connected noNodesProgressTimer
     askNSetNodeInfo tracerEnv newlyConnected displayedElements
     addDatasetsForConnected newlyConnected colors datasetIndices displayedElements
-    liftIO $ do
-      restoreHistoryFromBackup tracerEnv newlyConnected
+    restoreLastHistoryOnCharts tracerEnv datasetIndices newlyConnected
+    liftIO $
       updateDisplayedElements displayedElements connected
   setBlockReplayProgress connected teAcceptedMetrics
   setChunkValidationProgress connected teSavedTO
