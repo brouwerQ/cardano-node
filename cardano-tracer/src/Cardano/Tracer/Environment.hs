@@ -13,17 +13,18 @@ import           Cardano.Tracer.Types
 
 -- | Environment for all functions.
 data TracerEnv = TracerEnv
-  { teConfig            :: !TracerConfig
-  , teConnectedNodes    :: !ConnectedNodes
-  , teAcceptedMetrics   :: !AcceptedMetrics
-  , teSavedTO           :: !SavedTraceObjects
-  , teBlockchainHistory :: !BlockchainHistory
-  , teResourcesHistory  :: !ResourcesHistory
-  , teTxHistory         :: !TransactionsHistory
-  , teCurrentLogLock    :: !Lock
-  , teCurrentDPLock     :: !Lock
-  , teEventsQueues      :: !EventsQueues
-  , teDPRequestors      :: !DataPointRequestors
-  , teProtocolsBrake    :: !ProtocolsBrake
-  , teRTViewPageOpened  :: !WebPageStatus
+  { teConfig              :: !TracerConfig
+  , teConnectedNodes      :: !ConnectedNodes
+  , teConnectedNodesNames :: !ConnectedNodesNames
+  , teAcceptedMetrics     :: !AcceptedMetrics
+  , teSavedTO             :: !SavedTraceObjects
+  , teBlockchainHistory   :: !BlockchainHistory
+  , teResourcesHistory    :: !ResourcesHistory
+  , teTxHistory           :: !TransactionsHistory
+  , teCurrentLogLock      :: !Lock
+  , teCurrentDPLock       :: !Lock
+  , teEventsQueues        :: !EventsQueues
+  , teDPRequestors        :: !DataPointRequestors
+  , teProtocolsBrake      :: !ProtocolsBrake
+  , teRTViewPageOpened    :: !WebPageStatus
   }

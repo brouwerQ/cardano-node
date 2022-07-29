@@ -38,7 +38,8 @@ doRunCardanoTracer
   -> DataPointRequestors -- ^ The DataPointRequestors to ask 'DataPoint's.
   -> IO ()
 doRunCardanoTracer config protocolsBrake dpRequestors = do
-  connectedNodes  <- initConnectedNodes
+  connectedNodes      <- initConnectedNodes
+  connectedNodesNames <- initConnectedNodesNames
   acceptedMetrics <- initAcceptedMetrics
   savedTO         <- initSavedTraceObjects
 
@@ -55,19 +56,20 @@ doRunCardanoTracer config protocolsBrake dpRequestors = do
   -- Environment for all following functions.
   let tracerEnv =
         TracerEnv
-          { teConfig            = config
-          , teConnectedNodes    = connectedNodes
-          , teAcceptedMetrics   = acceptedMetrics
-          , teSavedTO           = savedTO
-          , teBlockchainHistory = chainHistory
-          , teResourcesHistory  = resourcesHistory
-          , teTxHistory         = txHistory
-          , teCurrentLogLock    = currentLogLock
-          , teCurrentDPLock     = currentDPLock
-          , teEventsQueues      = eventsQueues
-          , teDPRequestors      = dpRequestors
-          , teProtocolsBrake    = protocolsBrake
-          , teRTViewPageOpened  = rtViewPageOpened
+          { teConfig              = config
+          , teConnectedNodes      = connectedNodes
+          , teConnectedNodesNames = connectedNodesNames
+          , teAcceptedMetrics     = acceptedMetrics
+          , teSavedTO             = savedTO
+          , teBlockchainHistory   = chainHistory
+          , teResourcesHistory    = resourcesHistory
+          , teTxHistory           = txHistory
+          , teCurrentLogLock      = currentLogLock
+          , teCurrentDPLock       = currentDPLock
+          , teEventsQueues        = eventsQueues
+          , teDPRequestors        = dpRequestors
+          , teProtocolsBrake      = protocolsBrake
+          , teRTViewPageOpened    = rtViewPageOpened
           }
 
   -- Specify what should be done before 'cardano-tracer' stops.

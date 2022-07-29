@@ -12,10 +12,12 @@
 
 module Cardano.Tracer.Utils
   ( applyBrake
+  , askNodeName
   , beforeProgramStops
   , connIdToNodeId
   , initAcceptedMetrics
   , initConnectedNodes
+  , initConnectedNodesNames
   , initDataPointRequestors
   , initProtocolsBrake
   , lift2M
@@ -29,9 +31,9 @@ module Cardano.Tracer.Utils
   ) where
 
 import           Control.Applicative (liftA2, liftA3)
-import           Control.Concurrent
+import           Control.Concurrent (killThread, mkWeakThreadId, myThreadId)
 import           Control.Concurrent.STM (atomically)
-import           Control.Concurrent.STM.TVar (modifyTVar', newTVarIO)
+import           Control.Concurrent.STM.TVar (modifyTVar', newTVarIO, readTVarIO)
 import           Control.Exception (SomeException, SomeAsyncException (..), finally,
                    fromException, try, tryJust)
 import           Control.Monad (forM_)
@@ -47,11 +49,14 @@ import           System.Mem.Weak (deRefWeak)
 import qualified System.Signal as S
 import           System.Time.Extra (sleep)
 
+import           Cardano.Node.Startup (NodeInfo (..))
+
 import           Ouroboros.Network.Socket (ConnectionId (..))
 
-import           Cardano.Tracer.Configuration (Verbosity (..))
-import           Cardano.Tracer.Types (AcceptedMetrics, ConnectedNodes,
-                   DataPointRequestors, NodeId (..), ProtocolsBrake)
+import           Cardano.Tracer.Configuration
+import           Cardano.Tracer.Environment
+import           Cardano.Tracer.Handlers.RTView.Update.Utils
+import           Cardano.Tracer.Types
 
 -- | Run monadic action in a loop. If there's an exception,
 --   it will re-run the action again, after pause that grows.
@@ -118,6 +123,9 @@ connIdToNodeId ConnectionId{remoteAddress} = NodeId preparedAddress
 initConnectedNodes :: IO ConnectedNodes
 initConnectedNodes = newTVarIO S.empty
 
+initConnectedNodesNames :: IO ConnectedNodesNames
+initConnectedNodesNames = newTVarIO M.empty
+
 initAcceptedMetrics :: IO AcceptedMetrics
 initAcceptedMetrics = newTVarIO M.empty
 
@@ -126,6 +134,26 @@ initDataPointRequestors = newTVarIO M.empty
 
 initProtocolsBrake :: IO ProtocolsBrake
 initProtocolsBrake = newTVarIO False
+
+askNodeName
+  :: TracerEnv
+  -> NodeId
+  -> IO NodeName
+askNodeName tracerEnv nodeId@(NodeId anId) = do
+  nodesNames <- readTVarIO teConnectedNodesNames
+  case M.lookup nodeId nodesNames of
+    Just nodeName -> return nodeName
+    Nothing -> do
+      -- There is no name yet, so we have to ask for 'NodeInfo' datapoint to get the name.
+      nodeName <-
+        askDataPoint teDPRequestors teCurrentDPLock nodeId "NodeInfo" >>= \case
+          Nothing -> return anId
+          Just NodeInfo{niName} -> return $ if T.null niName then anId else niName
+      -- Store it in for the future using.
+      atomically . modifyTVar' teConnectedNodesNames $ M.insert nodeId nodeName
+      return nodeName
+ where
+  TracerEnv{teConnectedNodesNames, teDPRequestors, teCurrentDPLock} = tracerEnv
 
 -- | Stop the protocols. As a result, 'MsgDone' will be sent and interaction
 --   between acceptor's part and forwarder's part will be finished.

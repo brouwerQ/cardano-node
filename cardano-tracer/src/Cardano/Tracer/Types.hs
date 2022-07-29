@@ -1,6 +1,7 @@
 module Cardano.Tracer.Types
   ( AcceptedMetrics
   , ConnectedNodes
+  , ConnectedNodesNames
   , DataPointRequestors
   , NodeId (..)
   , NodeName
@@ -38,6 +39,9 @@ type DataPointRequestors = TVar (Map NodeId DataPointRequestor)
 --   So, 'ConnectedNodes' is used as a "source of truth" about currently
 --   connected nodes.
 type ConnectedNodes = TVar (Set NodeId)
+
+-- | We have to map node's id to its name (received with 'NodeInfo').
+type ConnectedNodesNames = TVar (Map NodeId NodeName)
 
 -- | The flag we use to stop the protocols from their acceptor's side.
 type ProtocolsBrake = TVar Bool
