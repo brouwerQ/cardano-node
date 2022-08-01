@@ -37,8 +37,6 @@ import           System.FilePath ((</>), takeBaseName)
 import           System.Time.Extra (sleep)
 import           Text.Read (readMaybe)
 
-import           Cardano.Node.Startup (NodeInfo (..))
-
 import           Cardano.Tracer.Environment
 import           Cardano.Tracer.Handlers.Metrics.Utils
 import           Cardano.Tracer.Handlers.RTView.State.Historical
@@ -257,8 +255,7 @@ getNodesIdsWithNames
   -> [NodeId]
   -> IO [(NodeId, NodeName)]
 getNodesIdsWithNames _ [] = return []
-getNodesIdsWithNames TracerEnv{teDPRequestors, teCurrentDPLock} connected =
-  forM connected $ \nodeId@(NodeId anId) ->
-    askDataPoint teDPRequestors teCurrentDPLock nodeId "NodeInfo" >>= \case
-      Nothing -> return (nodeId, anId)
-      Just ni -> return (nodeId, niName ni)
+getNodesIdsWithNames tracerEnv connected =
+  forM connected $ \nodeId ->
+    (,) <$> return nodeId
+        <*> askNodeName tracerEnv nodeId

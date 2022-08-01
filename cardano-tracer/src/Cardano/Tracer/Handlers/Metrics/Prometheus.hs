@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -11,11 +12,9 @@ import           Prelude hiding (head)
 import           Control.Concurrent.STM.TVar (readTVarIO)
 import           Control.Monad (forever)
 import           Control.Monad.IO.Class (liftIO)
-import qualified Data.ByteString as BS
 import qualified Data.HashMap.Strict as HM
 import           Data.Functor ((<&>))
 import qualified Data.Map.Strict as M
-import qualified Data.Set as S
 import           Data.String (IsString (..))
 import           Data.Text (Text)
 import qualified Data.Text as T
@@ -29,15 +28,18 @@ import           System.Time.Extra (sleep)
 import           Text.Blaze.Html5 hiding (map)
 import           Text.Blaze.Html5.Attributes hiding (title)
 
-import           Cardano.Tracer.Configuration (Endpoint (..))
-import           Cardano.Tracer.Types (AcceptedMetrics, ConnectedNodes, NodeId (..))
+import           Cardano.Tracer.Configuration
+import           Cardano.Tracer.Environment
+import           Cardano.Tracer.Types
 
 -- | Runs simple HTTP server that listens host and port and returns
 --   the list of currently connected nodes in such a format:
 --
---   * tmp-forwarder.sock@0
---   * tmp-forwarder.sock@1
---   * tmp-forwarder.sock@2
+--   * relay-1
+--   * relay-2
+--   * core-1
+--
+--  where 'relay-1', 'relay-2' and 'core-1' are nodes' names.
 --
 --  Each of list items is a href. By clicking on it, the user will be
 --  redirected to the page with the list of metrics received from that node,
@@ -50,22 +52,23 @@ import           Cardano.Tracer.Types (AcceptedMetrics, ConnectedNodes, NodeId (
 --  ekg_server_timestamp_ms 1639569439623
 --
 runPrometheusServer
-  :: Endpoint
-  -> ConnectedNodes
-  -> AcceptedMetrics
+  :: TracerEnv
+  -> Endpoint
   -> IO ()
-runPrometheusServer (Endpoint host port) connectedNodes acceptedMetrics = forever $ do
+runPrometheusServer tracerEnv (Endpoint host port) = forever $ do
   -- Pause to prevent collision between "Listening"-notifications from servers.
   sleep 0.1
   -- If everything is okay, the function 'simpleHttpServe' never returns.
   -- But if there is some problem, it never throws an exception, but just stops.
   -- So if it stopped - it will be re-started.
   simpleHttpServe config $
-    route [ ("/",        renderListOfConnectedNodes)
-          , ("/:nodeid", renderMetricsFromNode)
+    route [ ("/",          renderListOfConnectedNodes)
+          , ("/:nodename", renderMetricsFromNode)
           ]
   sleep 1.0
  where
+  TracerEnv{teConnectedNodesNames, teAcceptedMetrics} = tracerEnv
+
   config :: Config Snap ()
   config =
       setPort (fromIntegral port)
@@ -76,37 +79,41 @@ runPrometheusServer (Endpoint host port) connectedNodes acceptedMetrics = foreve
 
   renderListOfConnectedNodes :: Snap ()
   renderListOfConnectedNodes =
-    liftIO (readTVarIO connectedNodes <&> S.toList) >>= \case
-      []   -> writeText "There are no connected nodes yet."
-      nIds -> blaze . mkPage . map mkHref $ nIds
+    liftIO (readTVarIO teConnectedNodesNames <&> M.toList) >>= \case
+      [] -> writeText "There are no connected nodes yet."
+      nIdsWithNames -> blaze . mkPage . map mkHref $ nIdsWithNames
 
   mkPage hrefs = html $ do
     head . title $ "Prometheus metrics"
     body . ul $ mapM_ li hrefs
 
-  mkHref (NodeId anId) =
-    a ! href (fromString $ "http://" <> host <> ":" <> show port <> "/" <> anId')
-      $ toHtml anId'
+  mkHref (_nodeId, nodeName) =
+    a ! href (fromString $ "http://" <> host <> ":" <> show port <> "/" <> nodeName')
+      $ toHtml nodeName'
    where
-     anId' = T.unpack anId
+    nodeName' = T.unpack nodeName
 
   renderMetricsFromNode :: Snap ()
   renderMetricsFromNode = do
     reqParams <- rqParams <$> getRequest
-    case M.lookup "nodeid" reqParams of
-      Nothing   -> writeText "No such a node!"
-      Just anId -> writeText =<< liftIO (getMetricsFromNode anId acceptedMetrics)
+    case M.lookup "nodename" reqParams of
+      Just [nodeName] -> do
+        nodesNames <- liftIO $ readTVarIO teConnectedNodesNames
+        let reversedNames = [(nName, nId) | (nId, nName) <- M.toList nodesNames]
+        case lookup (decodeUtf8 nodeName) reversedNames of
+          Nothing -> writeText "No such a node!"
+          Just anId -> writeText =<< liftIO (getMetricsFromNode anId teAcceptedMetrics)
+      _ -> writeText "No such a node!"
 
 type MetricName  = Text
 type MetricValue = Text
 type MetricsList = [(MetricName, MetricValue)]
 
 getMetricsFromNode
-  :: [BS.ByteString]
+  :: NodeId
   -> AcceptedMetrics
   -> IO Text
-getMetricsFromNode [] _ = return "No such a node!"
-getMetricsFromNode (anId':_) acceptedMetrics =
+getMetricsFromNode nodeId acceptedMetrics =
   readTVarIO acceptedMetrics >>=
     (\case
         Nothing ->
@@ -115,8 +122,6 @@ getMetricsFromNode (anId':_) acceptedMetrics =
           sampleAll ekgStore <&> renderListOfMetrics . getListOfMetrics
     ) . M.lookup nodeId
  where
-  nodeId = NodeId $ decodeUtf8 anId'
-
   getListOfMetrics :: Sample -> MetricsList
   getListOfMetrics = filter (not . T.null . fst) . map metricsWeNeed . HM.toList
 

@@ -27,12 +27,12 @@ traceObjectsHandler
   -> IO ()
 traceObjectsHandler _ _ [] = return ()
 traceObjectsHandler tracerEnv nodeId traceObjects = do
-  _nodeName <- askNodeName tracerEnv nodeId
+  nodeName <- askNodeName tracerEnv nodeId
   forConcurrently_ (NE.nub logging) $ \LoggingParams{logMode, logRoot, logFormat} ->
     showProblemIfAny verbosity $
       case logMode of
-        FileMode    -> writeTraceObjectsToFile nodeId teCurrentLogLock logRoot logFormat traceObjects
-        JournalMode -> writeTraceObjectsToJournal nodeId traceObjects
+        FileMode    -> writeTraceObjectsToFile nodeName teCurrentLogLock logRoot logFormat traceObjects
+        JournalMode -> writeTraceObjectsToJournal nodeName traceObjects
   whenJust hasRTView . const $
     saveTraceObjects teSavedTO nodeId traceObjects
  where
